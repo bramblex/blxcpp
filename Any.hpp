@@ -52,7 +52,7 @@ public:
         : m_ptr(that.clone())
         , m_type(that.m_type) { }
 
-    inline Any(const Any&& that)
+    inline Any(Any&& that)
         : m_ptr(that.clone())
         , m_type(that.m_type) { }
 

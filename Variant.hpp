@@ -70,9 +70,11 @@ private:
         }
 
         // 右值版本，用 move 减少复制构造
-        static void copy(DataBuffer* const data, const Variant<Types...>&& that) {
+        static void copy(DataBuffer* const data, Variant<Types...>&& that) {
             // move 减少构造复制
             new (data) First(std::move(*(pointer_cast<First>(&that.m_data))));
+            // 转移以后要把自己的资源置空，防止重复析构
+            that.m_has_inited = false;
         }
     };
 
@@ -98,8 +100,8 @@ private:
         }
 
         // 右值版本，用 move 减少复制构造
-        static void copy(DataBuffer* const data, const Variant<Types...>&& that) {
-            BLXCPP_VARIANT_MATCH(that.m_type, copy(data, that));
+        static void copy(DataBuffer* const data, Variant<Types...>&& that) {
+            BLXCPP_VARIANT_MATCH(that.m_type, copy(data, std::move(that)));
         }
 
 #undef BLXCPP_VARIANT_MATCH
@@ -130,10 +132,10 @@ private:
         }
 
         // 右值版本，用 move 减少复制构造
-        static void copy(DataBuffer* const data, const Variant<Types...>&& that) {
+        static void copy(DataBuffer* const data, Variant<Types...>&& that) {
             BLXCPP_VARIANT_MATCH(
                         that.m_type,
-                        copy(data, that),
+                        copy(data, std::move(that)),
                         "Type does not matched when copy."
                         );
         }
@@ -141,7 +143,7 @@ private:
 #undef BLXCPP_VARIANT_MATCH
     };
 
-    void destroy() { if (null()) Helper<Types...>::destroy(m_type, &m_data); }
+    void destroy() { if (!null()) Helper<Types...>::destroy(m_type, &m_data); }
 
     bool m_has_inited = false;
     std::type_index m_type = std::type_index(typeid(void)); // 记录类型信息
@@ -170,10 +172,10 @@ public:
         Helper<Types...>::copy(&m_data, that);
     }
 
-    Variant(const Variant&& that)
+    Variant(Variant&& that)
         :  m_has_inited(true)
         ,  m_type(that.m_type) {
-        Helper<Types...>::copy(&m_data, that);
+        Helper<Types...>::copy(&m_data, std::move(that));
     }
 
     template<typename T>
@@ -184,7 +186,7 @@ public:
     }
 
     template<typename T>
-    Variant(const T&& data)
+    Variant(T&& data)
         :  m_has_inited(true)
         ,  m_type(std::type_index(typeid(T))) {
         new (&m_data) T(std::move(data));
@@ -223,6 +225,13 @@ public:
         destroy();
         m_type = that.m_type;
         Helper<Types...>::copy(&m_data, that);
+        return *this;
+    }
+
+    This& operator=(This&& that) {
+        destroy();
+        m_type = that.m_type;
+        Helper<Types...>::copy(&m_data, std::move(that));
         return *this;
     }
 
