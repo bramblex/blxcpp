@@ -23,8 +23,9 @@ namespace blxcpp {
 
 class DLoader {
 private:
+
 public:
-    DLoader();
+    DLoader(const std::string& );
 };
 
 }

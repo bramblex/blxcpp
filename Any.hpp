@@ -53,8 +53,10 @@ public:
         , m_type(that.m_type) { }
 
     inline Any(Any&& that)
-        : m_ptr(that.clone())
-        , m_type(that.m_type) { }
+        : m_ptr(std::move(that.m_ptr))
+        , m_type(that.m_type) {
+        that.m_ptr = nullptr;
+    }
 
     // 用来擦除类型，然后储存基类 Base 指针
     // 通过 std::decay 来一出引用和cv用于获取原始类型
