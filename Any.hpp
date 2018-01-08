@@ -10,14 +10,14 @@ namespace blxcpp {
 
 class Any {
 private:
-    template<bool IGNORE_1 = true>
+    template<typename=void>
     struct Base;
     typedef std::unique_ptr<Base<>> BasePtr;
 
     BasePtr m_ptr;
     std::type_index m_type;
 
-    template<bool IGNORE_1>
+    template<typename>
     struct Base {
         virtual ~Base() { }
         virtual BasePtr clone() const = 0;
