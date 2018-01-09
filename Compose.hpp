@@ -41,9 +41,9 @@ auto compose(F const& f, G const& g)
     };
 }
 
-// 左结合版本 compose Rgith
+// 左结合版本 compose left
 template<typename G, typename F>
-auto composeR(G const& g, F const& f)
+auto composel(G const& g, F const& f)
     -> typename ComposeHelper<F, G>::Func {
 
     using GArg = typename ComposeHelper<F, G>::GArg;
@@ -52,6 +52,16 @@ auto composeR(G const& g, F const& f)
         return f(g(std::forward<GArg>(arg)));
     };
 }
+
+// 无限参数版本 copose left
+//template <typename G, typename F, typename ...Funcs>
+//auto composel(G const& g, F const& f, const Funcs&... funcs)
+//    -> decltype (composel(composel(g, f), funcs...)) {
+
+//    using Arg = typename function_traits<G>::template args<0>::type;
+//    using Ret = typename funcstion_traits
+//}
+
 
 }
 

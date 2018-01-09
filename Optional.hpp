@@ -89,6 +89,11 @@ Optional<T> optional(const T& value) {
     return Optional<T>(value);
 }
 
+template <typename T>
+Optional<T> optional(const T&& value) {
+    return Optional<T>(std::move(value));
+}
+
 };
 
 #endif // BLXCPP_OPTIONAL_HPP

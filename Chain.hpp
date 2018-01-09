@@ -4,29 +4,37 @@
 
 #include <vector>
 #include <map>
+#include "Task.hpp"
 
 namespace blxcpp {
 
 /*
    @TODO:
    实现
+
    map
-   concatMap
-   flod
-   flodl
-   flodr
    sort
-   concat
    group
-   zip
    filter
    reverse
+
+   flod
+   count
+
+   concat
+   concatMap
+   zip
 */
 
-template <template<typename> class Container>
-class Chain {
-    Chain();
-};
+//template <typename Container, typename Func>
+//class Chain {
+//private:
+
+//    using value_type = typename Container::value_type;
+//    Func func;
+
+//public:
+//};
 
 }
 
