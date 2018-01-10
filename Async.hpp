@@ -4,8 +4,33 @@
 
 #include "function_traits.hpp"
 #include <thread>
+#include <atomic>
+#include <mutex>
+
 
 namespace blxcpp {
+
+template <typename T=void>
+class AsyncLock {
+private:
+    static AsyncLock<T>* m_instance;
+
+public:
+
+    std::atomic<int> m_count;
+    std::mutex m_lock;
+
+    static AsyncLock<T>* get(){
+        if (m_instance == nullptr) {
+            m_instance = new AsyncLock<T>();
+        }
+        return m_instance;
+    }
+
+};
+
+template <typename T>
+AsyncLock<T>* AsyncLock<T>::m_instance = nullptr;
 
 template<typename Func>
 class Async {
