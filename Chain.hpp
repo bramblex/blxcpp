@@ -2,12 +2,13 @@
 #ifndef BLXCPP_CHAIN_HPP
 #define BLXCPP_CHAIN_HPP
 
-#include <vector>
 
 #include "Task.hpp"
 #include "function_traits.hpp"
 
 #include <map>
+#include <vector>
+#include <array>
 #include <unordered_map>
 #include <algorithm>
 
@@ -23,17 +24,13 @@ namespace blxcpp {
    sort √
    filter √
    group √
+   flod // √
+
    select √ // 虽然都是 map 但是需要把 map 拉平成 vector
 
-   // 未完成
-   reverse
-
-   flod
-   count
-
-   concat
-   concatMap
-   zip
+   // 下一批实现
+   concat // 嗯，这个可以做
+   zip // 这个也可以做
 
 */
 
@@ -91,8 +88,6 @@ private:
 
     using FromC = ChainContainer<From>;
     using ToC = ChainContainer<To>;
-    using FromI = typename From::value_type;
-    using ToI = typename To::value_type;
 
     const std::function<To(const From&)> m_func;
 
@@ -192,11 +187,28 @@ public:
         return Chain<From, Next>(next);
     }
 
-    To value(const From& from) {
+    template<typename Func, typename T>
+    Chain<From, std::vector<typename function_traits<Func>::return_type>> fold(const Func& func, const T& t) {
+        using Next = std::vector<typename function_traits<Func>::return_type>;
+
+        auto last = m_func;
+        auto next = [func, last, t](const From& container) -> Next {
+            auto tmp = last(container);
+            auto result = t;
+            for (auto& item : tmp) {
+                result = func(result, item);
+            }
+            return Next { result };
+        };
+
+        return Chain<From, Next>(next);
+    }
+
+    To apply(const From& from) {
         return m_func(from);
     }
 
-    To operator()(const From& from) { return value(from); }
+    To operator()(const From& from) { return apply(from); }
 
 };
 
