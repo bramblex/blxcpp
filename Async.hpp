@@ -43,37 +43,28 @@ public:
 
     public:
 
-        using OnSuccess = std::function<void(Ret)>;
-        using OnFailed = std::function<void(std::exception)>;
+        using Callback = std::function<void(Ret)>;
 
         Async(AsyncEventLoop* event_loop, const std::function<Ret(Args...)>& func)
             : m_event_loop(event_loop), m_func(func) { }
 
-        void operator()(Args... args, const OnSuccess& onSuccess, const OnFailed& onFailed) {
+        void operator()(Args... args, const Callback& callback) {
             auto func = m_func;
             AsyncEventLoop* event_loop = m_event_loop;
-            std::thread([&args..., event_loop, func, onSuccess, onFailed](){
+            std::thread([event_loop, func, callback](Args... args){
                 event_loop->m_thread_count++;
 
                 Event event;
-                try {
-                    event = std::function<void()>(std::bind(onSuccess, func(std::forward<Args>(args)...)));
-                } catch (std::exception exp) {
-                    event = std::function<void()>(std::bind(onFailed, exp));
-                }
+                event = std::function<void()>(std::bind(callback, func(std::forward<Args>(args)...)));
 
                 event_loop->pushEvent(event);
 
                 event_loop->m_thread_count--;
-            }).detach();
+            }, std::forward<Args>(args)...).detach();
         }
 
         void operator()(Args... args) {
-            return operator()(args... ,  [](Ret){}, [](std::exception){});
-        }
-
-        void operator()(Args... args, const OnSuccess& onSuccess){
-            return operator()(args..., onSuccess, [](std::exception exp){ throw exp; });
+            return operator()(args... ,  [](Ret){});
         }
 
         Ret sync(Args... args) {
@@ -93,37 +84,29 @@ public:
 
     public:
 
-        using OnSuccess = std::function<void()>;
-        using OnFailed = std::function<void(std::exception)>;
+        using Callback = std::function<void()>;
 
         Async(AsyncEventLoop* event_loop, const std::function<void(Args...)>& func)
             : m_event_loop(event_loop), m_func(func) { }
 
-        void operator()(Args... args, const OnSuccess& onSuccess, const OnFailed& onFailed) const {
+        void operator()(Args... args, const Callback& callback) const {
             auto func = m_func;
             AsyncEventLoop* event_loop = m_event_loop;
-            std::thread([&args..., event_loop, func, onSuccess, onFailed](){
+            std::thread([event_loop, func, callback](Args... args){
                 event_loop->m_thread_count++;
 
                 Event event;
-                try {
-                    event = onSuccess;
-                } catch (std::exception exp) {
-                    event = std::function<void()>(std::bind(onFailed, exp));
-                }
+                func(std::forward<Args>(args)...);
+                event = callback;
 
                 event_loop->pushEvent(event);
 
                 event_loop->m_thread_count--;
-            }).detach();
+            }, std::forward<Args>(args)...).detach();
         }
 
         void operator()(Args... args) const {
-            return operator()(args... ,  [](){}, [](std::exception){});
-        }
-
-        void operator()(Args... args, const OnSuccess& onSuccess) const {
-            return operator()(args..., onSuccess, [](std::exception exp){ throw exp; });
+            return operator()(args... ,  [](){});
         }
 
         void sync(Args... args) const {
