@@ -7,7 +7,8 @@
 #include <functional>
 #include <mutex>
 #include <map>
-#include <set>
+#include <queue>
+#include <vector>
 
 namespace blxcpp {
 
@@ -38,6 +39,7 @@ private:
     class Timeout {
     public:
         ID m_id;
+        bool m_is_activated;
         bool m_is_repeated; // 是否重复
         Time m_timeout; // 设置的 timeout 时间
         Time m_expried_at; // 超时时间
@@ -46,6 +48,7 @@ private:
         inline Timeout() { }
         inline Timeout(ID id, Time now, bool is_repeated, Time timeout, const std::function<void()>& func)
             : m_id(id)
+            , m_is_activated(true)
             , m_is_repeated(is_repeated)
             , m_timeout(timeout)
             , m_expried_at(now + m_timeout)
@@ -54,7 +57,7 @@ private:
 
         struct PtrLess {
             inline bool operator()(const Timeout* l, const Timeout* r){
-                return l->m_expried_at < r->m_expried_at;
+                return (l->m_expried_at > r->m_expried_at);
             }
         };
     };
@@ -62,7 +65,7 @@ private:
 private:
     std::mutex m_lock;
     std::map<ID, Timeout> m_containers;
-    std::set<Timeout*, Timeout::PtrLess> m_queue;
+    std::priority_queue<Timeout*, std::vector<Timeout*>, Timeout::PtrLess> m_queue;
 
     ID m_next_id_ = 0;
     inline ID nextId() {
@@ -84,7 +87,7 @@ public:
         std::lock_guard<std::mutex> sp(m_lock);
         ID id = nextId();
         m_containers[id] = Timeout(id, m_current, repeat, timeout, func);
-        m_queue.insert(&m_containers[id]);
+        m_queue.push(&m_containers[id]);
         return Ref(this, id);
     }
 
@@ -94,27 +97,39 @@ public:
 
         if (!m_containers.empty()) {
 
-            std::set<Timeout*> removed;
-            std::set<Timeout*> next;
+            std::vector<Timeout*> removed;
+            std::vector<Timeout*> next;
 
-            for (auto& t : m_queue) {
+            while (!m_queue.empty()) {
+                Timeout* t = m_queue.top();
+
+                // 如果是
+                if (!t->m_is_activated) {
+                    m_queue.pop();
+                    removed.emplace_back(t);
+                    continue;
+                }
+
                 if (t->m_expried_at > m_current) break;
+                m_queue.pop();
 
                 if (t->m_is_repeated) {
                     t->m_expried_at = m_current + t->m_timeout;
-                    next.insert(t);
+                    next.emplace_back(t);
                 } else {
-                    removed.insert(t);
+                    removed.emplace_back(t);
                 }
 
                 t->m_func();
             }
 
-            for (Timeout* t : removed)
+            for (Timeout* t : removed){
                 m_containers.erase(t->m_id);
+            }
 
-            for (Timeout* t : next)
-                m_queue.insert(t);
+            for (Timeout* t : next) {
+                m_queue.push(t);
+            }
 
         }
     }
@@ -122,9 +137,7 @@ public:
     inline void clear(ID id) {
         if (m_containers.find(id) != m_containers.end()) {
             std::lock_guard<std::mutex> sp(m_lock);
-            auto p = &m_containers[id];
-            m_queue.erase(p);
-            m_containers.erase(id);
+            m_containers[id].m_is_activated = false;
         }
     }
 

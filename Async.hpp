@@ -11,12 +11,13 @@
 #include <csignal>
 #include <chrono>
 #include <map>
+#include <iostream>
 
 
 namespace blxcpp {
 
 class AsyncEventLoop {
-private:
+public:
 
     class Event {
     private:
@@ -134,7 +135,6 @@ private:
     std::mutex m_queue_lock;
     std::deque<Event> m_queue;
     std::atomic<int> m_thread_count;
-
     Timer m_timer;
 
 public:
@@ -181,118 +181,50 @@ public:
         m_queue.push_front(event);
     }
 
-    Timer::Ref setTimeout(Timer::Time t, const std::function<void()> func) {
+    Timer::Ref setTimeout(Timer::Time t, const std::function<void()>& func) {
         auto event_loop = this;
         return m_timer.setTimeout(t, false, [event_loop, func](){
-            std::lock_guard<std::mutex> sp(event_loop->m_queue_lock);
-            event_loop->pushEvent(Event(func));
+            event_loop->m_queue.push_back(Event(func));
         });
     }
 
     Timer::Ref setInterval(Timer::Time t, const std::function<void()>& func) {
         auto event_loop = this;
         return m_timer.setTimeout(t, true, [event_loop, func](){
-        std::lock_guard<std::mutex> sp(event_loop->m_queue_lock);
-            event_loop->pushEvent(Event(func));
+            event_loop->m_queue.push_back(Event(func));
         });
     }
 
+public:
+    static AsyncEventLoop* const global;
+    static std::sig_atomic_t singal;
 };
 
-//template <typename T=void>
-//class AsyncEventLoop {
-//private:
-
-//    std::mutex m_queue_lock;
-//    std::deque<std::function<void()>> m_queue;
-
-//public:
+AsyncEventLoop* const AsyncEventLoop::global = new AsyncEventLoop();
+std::sig_atomic_t AsyncEventLoop::singal = 0;
 
 
-//private:
-//    static AsyncEventLoop<T>* m_instance;
-//    static std::sig_atomic_t m_signal;
+template<typename Func>
+auto async(const Func& func) -> decltype (AsyncEventLoop::global->async(func)) {
+    return AsyncEventLoop::global->async(func);
+}
 
-//public:
+Timer::Ref setTimeout(Timer::Time t, const std::function<void()>& func) {
+    return AsyncEventLoop::global->setTimeout(t, func);
+}
 
-//    static AsyncEventLoop<T>* get() {
-//        if (m_instance == nullptr) {
-//            m_instance = new AsyncEventLoop();
-//            std::signal(SIGINT, [](int signal){
-//                AsyncEventLoop<T>::m_signal = signal;
-//            });
-//        }
-//        return m_instance;
-//    }
+Timer::Ref setInterval(Timer::Time t, const std::function<void()>& func) {
+    return AsyncEventLoop::global->setInterval(t, func);
+}
 
-//    static void run() {
-//        AsyncEventLoop<T>* event_loop = get();
-//        while(m_signal == 0) {
-
-//            if (event_loop->m_queue.size() > 0)
-//                continue;
-
-//            std::function<void()> func;
-//            {
-//                std::lock_guard<std::mutex> sp(event_loop->m_queue_lock);
-//                func = event_loop->m_queue.front();
-//                event_loop->m_queue.pop_front();
-//            }
-
-//            func();
-//            std::this_thread::sleep_for(std::chrono::milliseconds(6));
-
-//        }
-//    }
-//};
-
-//template <typename T=void>
-//class AsyncLock {
-//private:
-//    static AsyncLock<T>* m_instance;
-
-//public:
-
-//    std::atomic<int> m_count;
-//    std::mutex m_lock;
-
-//    static AsyncLock<T>* get(){
-//        if (m_instance == nullptr) {
-//            m_instance = new AsyncLock<T>();
-//        }
-//        return m_instance;
-//    }
-
-//};
-
-//template <typename T>
-//AsyncLock<T>* AsyncLock<T>::m_instance = nullptr;
-
-//template<typename Func>
-//class Async {
-//private:
-//    const Func m_func;
-
-//public:
-//    Async(const Func& func)
-//        : m_func(func) { }
-
-//    template<typename ...Args>
-//    void operator()(Args... args) {
-//        return std::thread(m_func, std::forward<Args>(args)...).detach();
-//    }
-
-//    template<typename ...Args>
-//    void sync(Args... args) {
-//        m_func(std::forward<Args>(args)...);
-//    }
-
-//};
-
-//template<typename Func>
-//Async<Func> async(const Func& func) {
-//    return Async<Func>(func);
-//}
+void eventLoop() {
+    std::signal(SIGINT, [](int i){
+        AsyncEventLoop::singal = i;
+    });
+    AsyncEventLoop::global->epoll(6, [](){
+        return AsyncEventLoop::singal > 0;
+    });
+}
 
 }
 
