@@ -4,6 +4,8 @@
 
 #include "function_traits.hpp"
 #include "Timer.hpp"
+#include "ThreadPool.hpp"
+
 #include <thread>
 #include <atomic>
 #include <mutex>
@@ -51,16 +53,11 @@ public:
         void operator()(Args... args, const Callback& callback) {
             auto func = m_func;
             AsyncEventLoop* event_loop = m_event_loop;
-            std::thread([event_loop, func, callback](Args... args){
-                event_loop->m_thread_count++;
-
+            event_loop->m_thread_pool.put(std::bind([event_loop, func, callback](Args... args){
                 Event event;
                 event = std::function<void()>(std::bind(callback, func(std::forward<Args>(args)...)));
-
                 event_loop->pushEvent(event);
-
-                event_loop->m_thread_count--;
-            }, std::forward<Args>(args)...).detach();
+            }, std::forward<Args>(args)...));
         }
 
         void operator()(Args... args) {
@@ -92,17 +89,13 @@ public:
         void operator()(Args... args, const Callback& callback) const {
             auto func = m_func;
             AsyncEventLoop* event_loop = m_event_loop;
-            std::thread([event_loop, func, callback](Args... args){
-                event_loop->m_thread_count++;
 
+            m_event_loop->m_thread_pool.put(std::bind([event_loop, func, callback](Args... args){
                 Event event;
                 func(std::forward<Args>(args)...);
                 event = callback;
-
                 event_loop->pushEvent(event);
-
-                event_loop->m_thread_count--;
-            }, std::forward<Args>(args)...).detach();
+            }, std::forward<Args>(args)...));
         }
 
         void operator()(Args... args) const {
@@ -117,13 +110,10 @@ public:
 private:
     std::mutex m_queue_lock;
     std::deque<Event> m_queue;
-    std::atomic<int> m_thread_count;
+    ThreadPool m_thread_pool;
     Timer m_timer;
 
 public:
-
-    AsyncEventLoop()
-        : m_thread_count(0) { }
 
     template<typename Func>
     Async<typename function_traits<Func>::function_type> async(const Func& func) {
@@ -135,7 +125,7 @@ public:
     }
 
     void epoll(int64_t interval, const std::function<bool()>& stop){
-        while (!stop() && (m_thread_count > 0 || !m_queue.empty() || !m_timer.empty())) {
+        while (!stop() && (m_thread_pool.busy() || !m_queue.empty() || !m_timer.empty())) {
 
             m_timer.tick(Timer::now());
 
@@ -152,6 +142,7 @@ public:
             std::this_thread::sleep_for(std::chrono::milliseconds(interval));
 
         }
+        m_thread_pool.stop();
     }
 
     void pushEvent(const Event& event) {
