@@ -17,82 +17,87 @@ namespace blxcpp {
 
 class ThreadPool {
 public:
-
     using Pool = ThreadPool;
+
     using Task = std::function<void()>;
 
 private:
+    using TaskS = std::function<bool()>;
 
-    // 同步队列
     std::mutex m_queue_lock;
     std::condition_variable m_queue_not_empty;
-    std::queue<Task> m_task_queue;
+    std::queue<TaskS> m_task_queue;
 
-    bool m_stop_signal;
+    std::vector<std::thread> m_threads;
     std::atomic<int> m_busy_threads;
 
-    // 线程池
-    std::vector<std::thread> m_threads;
+private:
 
-    // 具体的执行函数
-    static inline void run(ThreadPool* pool) {
-        while(!pool->m_stop_signal) {
-            auto task = pool->get();
-            if (!pool->m_stop_signal) { break; }
-            pool->m_busy_threads++;
-            task();
+    static inline void run(Pool* pool) {
+        while(true){
+
+            TaskS task;
+            {
+                std::unique_lock<std::mutex> locker(pool->m_queue_lock);
+                pool->m_queue_not_empty.wait(locker, [pool](){
+                    return !pool->m_task_queue.empty();
+                });
+                task = pool->m_task_queue.front();
+                pool->m_task_queue.pop();
+
+                // 获取到 task 了以后就要立即把线程设置为 busy 了
+                // 防止出现蛋疼的时间差
+                pool->m_busy_threads++;
+            }
+
+            bool signal = task();
+
+            // 执行完后再把线程设为 free
             pool->m_busy_threads--;
-        }
-        std::cout << "线程结束" << std::endl;
-    }
 
-    inline Task get(){
-        std::unique_lock<std::mutex> locker(m_queue_lock);
-        m_queue_not_empty.wait(locker, [this](){
-            return !this->m_task_queue.empty()
-                    || this->m_stop_signal;
-        });
-
-        if (this->m_stop_signal) {
-            return [](){};
-        } else {
-            auto task = m_task_queue.front();
-            m_task_queue.pop();
-            return task;
+            if (!signal) break;
         }
     }
+
+    static inline TaskS create(const Task& task, bool signal = true) {
+        return [=]{ task(); return signal; };
+    }
+
 
 public:
-
-    inline void put(Task&& task) {
-        {
-            std::lock_guard<std::mutex> sp (m_queue_lock);
-            m_task_queue.push(std::forward<Task>(task));
-        }
-        m_queue_not_empty.notify_one();
-    }
 
     inline bool busy() {
         std::lock_guard<std::mutex> sp (m_queue_lock);
         return m_busy_threads > 0 || !m_task_queue.empty();
     }
 
-    inline void stop() {
+    inline void put(const Task& task){
         {
-            std::lock_guard<std::mutex> sp(m_queue_lock);
-            m_stop_signal = true;
+            std::lock_guard<std::mutex> sp (m_queue_lock);
+            m_task_queue.push(create(task));
         }
-        for (auto& thread : m_threads) {
-            m_queue_not_empty.notify_all();
-            thread.join();
+        m_queue_not_empty.notify_one();
+    }
+
+    inline ThreadPool(size_t init_size = std::thread::hardware_concurrency())
+        : m_busy_threads(0) {
+        for (size_t i = 0; i < init_size; i++) {
+            m_threads.push_back(std::thread(&run, this));
         }
     }
 
-    inline ThreadPool(size_t size = std::thread::hardware_concurrency())
-        : m_stop_signal(false)
-        , m_busy_threads(0) {
-        for (size_t i = 0; i < size; i++) {
-            m_threads.push_back(std::thread(&run, this));
+    inline ~ThreadPool() {
+        {
+            std::lock_guard<std::mutex> sp (m_queue_lock);
+            for (size_t i = 0; i < m_threads.size(); i++) {
+                m_task_queue.push(create([]{}, false));
+            }
+        }
+
+        m_queue_not_empty.notify_all();
+
+        for (std::thread& thread : m_threads) {
+            thread.join();
         }
     }
 

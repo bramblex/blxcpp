@@ -61,13 +61,12 @@ public:
         }
 
         void operator()(Args... args) {
-            return operator()(args... ,  [](Ret){});
+            m_event_loop->m_thread_pool.put(std::bind(m_func, std::forward<Args>(args)...));
         }
 
         Ret sync(Args... args) {
             return m_func(std::forward<Args>(args)...);
         }
-
 
     };
 
@@ -86,7 +85,7 @@ public:
         Async(AsyncEventLoop* event_loop, const std::function<void(Args...)>& func)
             : m_event_loop(event_loop), m_func(func) { }
 
-        void operator()(Args... args, const Callback& callback) const {
+        void operator()(Args... args, const Callback& callback) {
             auto func = m_func;
             AsyncEventLoop* event_loop = m_event_loop;
 
@@ -98,11 +97,11 @@ public:
             }, std::forward<Args>(args)...));
         }
 
-        void operator()(Args... args) const {
-            return operator()(args... ,  [](){});
+        void operator()(Args... args) {
+            m_event_loop->m_thread_pool.put(std::bind(m_func, std::forward<Args>(args)...));
         }
 
-        void sync(Args... args) const {
+        void sync(Args... args) {
             return m_func(std::forward<Args>(args)...);
         }
     };
@@ -116,15 +115,15 @@ private:
 public:
 
     template<typename Func>
-    Async<typename function_traits<Func>::function_type> async(const Func& func) {
+    inline Async<typename function_traits<Func>::function_type> async(const Func& func) {
         return Async<typename function_traits<Func>::function_type>(this, func);
     }
 
-    void epoll() {
+    inline void epoll() {
         return epoll(6, [](){ return false; });
     }
 
-    void epoll(int64_t interval, const std::function<bool()>& stop){
+    inline void epoll(int64_t interval, const std::function<bool()>& stop){
         while (!stop() && (m_thread_pool.busy() || !m_queue.empty() || !m_timer.empty())) {
 
             m_timer.tick(Timer::now());
@@ -142,63 +141,73 @@ public:
             std::this_thread::sleep_for(std::chrono::milliseconds(interval));
 
         }
-        m_thread_pool.stop();
     }
 
-    void pushEvent(const Event& event) {
+    inline void pushEvent(const Event& event) {
         std::lock_guard<std::mutex> sp(m_queue_lock);
         m_queue.push_back(event);
     }
 
-    void pushNextTick(const Event& event) {
+    inline void pushNextTick(const Event& event) {
         std::lock_guard<std::mutex> sp(m_queue_lock);
         m_queue.push_front(event);
     }
 
-    Timer::Ref setTimeout(Timer::Time t, const std::function<void()>& func) {
+    inline Timer::Ref setTimeout(Timer::Time t, const std::function<void()>& func) {
         auto event_loop = this;
         return m_timer.setTimeout(t, false, [event_loop, func](){
             event_loop->m_queue.push_back(Event(func));
         });
     }
 
-    Timer::Ref setInterval(Timer::Time t, const std::function<void()>& func) {
+    inline Timer::Ref setInterval(Timer::Time t, const std::function<void()>& func) {
         auto event_loop = this;
         return m_timer.setTimeout(t, true, [event_loop, func](){
             event_loop->m_queue.push_back(Event(func));
         });
     }
 
+private:
+    static AsyncEventLoop* global;
+
 public:
-    static AsyncEventLoop* const global;
     static std::sig_atomic_t singal;
+
+    inline static AsyncEventLoop* getGlobal(){
+        if (global == nullptr) {
+            global = new AsyncEventLoop();
+        }
+        return global;
+    }
 };
 
-AsyncEventLoop* const AsyncEventLoop::global = new AsyncEventLoop();
+// init
+AsyncEventLoop* AsyncEventLoop::global = nullptr;
 std::sig_atomic_t AsyncEventLoop::singal = 0;
 
 
 template<typename Func>
-auto async(const Func& func) -> decltype (AsyncEventLoop::global->async(func)) {
-    return AsyncEventLoop::global->async(func);
+inline auto async(const Func& func) -> decltype (AsyncEventLoop::getGlobal()->async(func)) {
+    return AsyncEventLoop::getGlobal()->async(func);
 }
 
-Timer::Ref setTimeout(Timer::Time t, const std::function<void()>& func) {
-    return AsyncEventLoop::global->setTimeout(t, func);
+inline Timer::Ref setTimeout(Timer::Time t, const std::function<void()>& func) {
+    return AsyncEventLoop::getGlobal()->setTimeout(t, func);
 }
 
-Timer::Ref setInterval(Timer::Time t, const std::function<void()>& func) {
-    return AsyncEventLoop::global->setInterval(t, func);
+inline Timer::Ref setInterval(Timer::Time t, const std::function<void()>& func) {
+    return AsyncEventLoop::getGlobal()->setInterval(t, func);
 }
 
-void eventLoop() {
+inline void eventLoop() {
     std::signal(SIGINT, [](int i){
         AsyncEventLoop::singal = i;
     });
-    AsyncEventLoop::global->epoll(6, [](){
+    AsyncEventLoop::getGlobal()->epoll(6, [](){
         return AsyncEventLoop::singal > 0;
     });
 }
+
 
 }
 
