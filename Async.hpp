@@ -19,6 +19,18 @@
 namespace blxcpp {
 
 class AsyncEventLoop {
+private:
+
+    template<typename, typename Arg>
+    struct MakeCallback {
+        using type = void(Arg);
+    };
+
+    template<typename IGNORE>
+    struct MakeCallback<IGNORE, void> {
+        using type = void();
+    };
+
 public:
 
     class Event {
@@ -38,14 +50,42 @@ public:
 
     template <typename Ret, typename ...Args>
     class Async<Ret(Args...)> {
+    public:
+        using Callback = std::function<typename MakeCallback<void, Ret>::type>;
+        using Func = std::function<Ret(Args...)>;
+
     private:
 
         AsyncEventLoop* m_event_loop;
         std::function<Ret(Args...)> m_func;
 
+        template<typename, bool EmptyReturn>
+        struct Runer;
+
+        template<typename IGNORE>
+        struct Runer<IGNORE, true> {
+            static void run(AsyncEventLoop* event_loop, const Func& func, const Callback& callback, Args... args){
+                event_loop->m_thread_pool.put(std::bind([event_loop, func, callback](Args... args){
+                    func(std::forward<Args>(args)...);
+                    Event event = callback;
+                    event_loop->pushEvent(event);
+                }, std::forward<Args>(args)...));
+            }
+        };
+
+        template<typename IGNORE>
+        struct Runer<IGNORE, false> {
+            static void run(AsyncEventLoop* event_loop, const Func& func, const Callback& callback, Args... args){
+                event_loop->m_thread_pool.put(std::bind([event_loop, func, callback](Args... args){
+                    Event event = std::function<void()>(std::bind(callback, func(std::forward<Args>(args)...)));
+                    event_loop->pushEvent(event);
+                }, std::forward<Args>(args)...));
+            }
+        };
+
+
     public:
 
-        using Callback = std::function<void(Ret)>;
 
         Async(AsyncEventLoop* event_loop, const std::function<Ret(Args...)>& func)
             : m_event_loop(event_loop), m_func(func) { }
@@ -53,10 +93,7 @@ public:
         void operator()(Args... args, const Callback& callback) {
             auto func = m_func;
             AsyncEventLoop* event_loop = m_event_loop;
-            event_loop->m_thread_pool.put(std::bind([event_loop, func, callback](Args... args){
-                Event event = std::function<void()>(std::bind(callback, func(std::forward<Args>(args)...)));
-                event_loop->pushEvent(event);
-            }, std::forward<Args>(args)...));
+            Runer<void, std::is_same<Ret, void>::value>::run(event_loop, func, callback, std::forward<Args>(args)...);
         }
 
         void operator()(Args... args) {
@@ -67,41 +104,6 @@ public:
             return m_func(std::forward<Args>(args)...);
         }
 
-    };
-
-
-    template <typename ...Args>
-    class Async<void(Args...)> {
-    private:
-
-        AsyncEventLoop* m_event_loop;
-        std::function<void(Args...)> m_func;
-
-    public:
-
-        using Callback = std::function<void()>;
-
-        Async(AsyncEventLoop* event_loop, const std::function<void(Args...)>& func)
-            : m_event_loop(event_loop), m_func(func) { }
-
-        void operator()(Args... args, const Callback& callback) {
-            auto func = m_func;
-            AsyncEventLoop* event_loop = m_event_loop;
-
-            m_event_loop->m_thread_pool.put(std::bind([event_loop, func, callback](Args... args){
-                func(std::forward<Args>(args)...);
-                Event event = callback;
-                event_loop->pushEvent(event);
-            }, std::forward<Args>(args)...));
-        }
-
-        void operator()(Args... args) {
-            m_event_loop->m_thread_pool.put(std::bind(m_func, std::forward<Args>(args)...));
-        }
-
-        void sync(Args... args) {
-            return m_func(std::forward<Args>(args)...);
-        }
     };
 
 private:
