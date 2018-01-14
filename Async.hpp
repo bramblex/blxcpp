@@ -54,8 +54,7 @@ public:
             auto func = m_func;
             AsyncEventLoop* event_loop = m_event_loop;
             event_loop->m_thread_pool.put(std::bind([event_loop, func, callback](Args... args){
-                Event event;
-                event = std::function<void()>(std::bind(callback, func(std::forward<Args>(args)...)));
+                Event event = std::function<void()>(std::bind(callback, func(std::forward<Args>(args)...)));
                 event_loop->pushEvent(event);
             }, std::forward<Args>(args)...));
         }
@@ -90,9 +89,8 @@ public:
             AsyncEventLoop* event_loop = m_event_loop;
 
             m_event_loop->m_thread_pool.put(std::bind([event_loop, func, callback](Args... args){
-                Event event;
                 func(std::forward<Args>(args)...);
-                event = callback;
+                Event event = callback;
                 event_loop->pushEvent(event);
             }, std::forward<Args>(args)...));
         }
