@@ -10,21 +10,20 @@ namespace blxcpp {
 
 class Any {
 private:
-    template<typename=void>
+
     struct Base;
-    typedef std::unique_ptr<Base<>> BasePtr;
+    typedef std::unique_ptr<Base> BasePtr;
 
     BasePtr m_ptr;
     std::type_index m_type;
 
-    template<typename>
     struct Base {
-        virtual ~Base() { }
+        virtual ~Base();
         virtual BasePtr clone() const = 0;
     };
 
     template<typename T>
-    struct Derived : Base<> {
+    struct Derived : Base {
 
         T m_value;
 
@@ -37,26 +36,15 @@ private:
         }
     };
 
-    inline BasePtr clone() const {
-        if (m_ptr != nullptr)
-            return m_ptr->clone();
-        return nullptr;
-    }
+    BasePtr clone() const;
 
 public:
 
-    inline Any(void)
-        : m_type(std::type_index(typeid(void))) { }
+    Any(void);
 
-    inline Any(const Any& that)
-        : m_ptr(that.clone())
-        , m_type(that.m_type) { }
+    Any(const Any& that);
 
-    inline Any(Any&& that)
-        : m_ptr(std::move(that.m_ptr))
-        , m_type(that.m_type) {
-        that.m_ptr = nullptr;
-    }
+    Any(Any&& that);
 
     // 用来擦除类型，然后储存基类 Base 指针
     // 通过 std::decay 来一出引用和cv用于获取原始类型
@@ -65,7 +53,7 @@ public:
         : m_ptr(new  Derived <typename std::decay<U>::type>(std::forward<U>(value)))
         , m_type(std::type_index(typeid(typename std::decay<U>::type))) { }
 
-    inline bool null() const { return m_ptr == nullptr; }
+    bool null() const;
 
     template<class U>
     inline bool is() const { return m_type == std::type_index(typeid (U)); }
@@ -86,12 +74,7 @@ public:
     }
 
     // 赋值，同时擦除类型
-    inline Any& operator=(const Any& other) {
-        if (m_ptr == other.m_ptr) return *this;
-        m_ptr = other.clone();
-        m_type = other.m_type;
-        return *this;
-    }
+    Any& operator=(const Any& other);
 
 };
 
